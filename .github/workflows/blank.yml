@@ -1,0 +1,56 @@
+name: Windows RDP via Ngrok
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+
+    # 1. تثبيت Ngrok
+    - name: Download Ngrok
+      run: |
+        Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-windows-amd64.zip" -OutFile "ngrok.zip"
+        Expand-Archive ngrok.zip -DestinationPath .
+        del ngrok.zip
+
+    # 2. مصادقة ngrok
+    - name: Ngrok Auth
+      run: .\ngrok.exe authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+
+    # 3. تفعيل RDP في Windows Server
+    - name: Enable RDP
+      run: |
+        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+    # 4. إنشاء مستخدم لتسجيل الدخول
+    - name: Create User
+      run: |
+        net user rdpuser "WinRDP@2025!" /add
+        net localgroup administrators rdpuser /add
+
+    # 5. تشغيل نفق ngrok على منفذ 3389 (RDP)
+    - name: Start Ngrok Tunnel
+      run: |
+        Start-Process -NoNewWindow -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --region eu"
+        Start-Sleep -Seconds 12
+
+        $tunnel = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
+        $url = $tunnel.tunnels.public_url
+        echo "============================="
+        echo "      RDP CONNECTION"
+        echo "============================="
+        echo "User: rdpuser"
+        echo "Pass: WinRDP@2025!"
+        echo "Address (Host:Port): $url"
+        echo "============================="
+
+    # 6. إبقاء الجلسة تعمل
+    - name: Keep Alive
+      run: |
+        while ($true) {
+          Start-Sleep -Seconds 300
+        }
